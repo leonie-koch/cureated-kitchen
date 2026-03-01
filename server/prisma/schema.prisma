@@ -11,3 +11,94 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+model Recipe {
+  id                 String                @id @default(cuid())
+  title              String
+  description        String?
+  servings           Int?
+  prepMinutes        Int?
+  cookMinutes        Int?
+  instructions       String?
+  createdAt          DateTime              @default(now())
+  updatedAt          DateTime              @updatedAt
+  recipeIngredients  RecipeIngredient[]
+  propertyScores     RecipePropertyScore[]
+}
+
+model Ingredient {
+  id                 String             @id @default(cuid())
+  name               String             @unique
+  defaultUnit        String?
+  kcalPer100g        Float?
+  sugarPer100g       Float?
+  magnesiumPer100gMg Float?
+  vitaminB12Per100g  Float?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  recipeIngredients  RecipeIngredient[]
+}
+
+model RecipeIngredient {
+  id           String     @id @default(cuid())
+  recipeId     String
+  ingredientId String
+  amount       Float
+  unit         String
+  createdAt    DateTime   @default(now())
+  recipe       Recipe     @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  ingredient   Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Restrict)
+
+  @@unique([recipeId, ingredientId])
+  @@index([ingredientId])
+}
+
+model Property {
+  id                String                    @id @default(cuid())
+  key               String                    @unique
+  label             String
+  description       String?
+  isComposite       Boolean                   @default(false)
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+  recipeScores      RecipePropertyScore[]
+  conditionWeights  ConditionPropertyWeight[]
+}
+
+model RecipePropertyScore {
+  id         String   @id @default(cuid())
+  recipeId   String
+  propertyId String
+  score      Float
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  recipe     Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@unique([recipeId, propertyId])
+  @@index([propertyId, score])
+}
+
+model Condition {
+  id          String                    @id @default(cuid())
+  key         String                    @unique
+  label       String
+  description String?
+  createdAt   DateTime                  @default(now())
+  updatedAt   DateTime                  @updatedAt
+  weights     ConditionPropertyWeight[]
+}
+
+model ConditionPropertyWeight {
+  id          String    @id @default(cuid())
+  conditionId String
+  propertyId  String
+  weight      Float
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  condition   Condition @relation(fields: [conditionId], references: [id], onDelete: Cascade)
+  property    Property  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@unique([conditionId, propertyId])
+  @@index([propertyId, weight])
+}
