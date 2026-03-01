@@ -5,6 +5,7 @@ import { AppService } from './app.service';
 import { ConditionsModule } from './conditions/conditions.module';
 import { IngredientsModule } from './ingredients/ingredients.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { PropertiesModule } from './properties/properties.module';
 import { RecipesModule } from './recipes/recipes.module';
 
 @Module({
@@ -14,6 +15,7 @@ import { RecipesModule } from './recipes/recipes.module';
     RecipesModule,
     IngredientsModule,
     ConditionsModule,
+    PropertiesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

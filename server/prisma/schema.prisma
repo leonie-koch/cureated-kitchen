@@ -58,7 +58,6 @@ model Property {
   key               String                    @unique
   label             String
   description       String?
-  isComposite       Boolean                   @default(false)
   createdAt         DateTime                  @default(now())
   updatedAt         DateTime                  @updatedAt
   recipeScores      RecipePropertyScore[]
