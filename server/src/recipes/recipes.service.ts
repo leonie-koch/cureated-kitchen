@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { IngredientsService } from '../ingredients/ingredients.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateRecipeDto } from './dto/create-recipe.dto';
 import { UpdateRecipeDto } from './dto/update-recipe.dto';
@@ -19,7 +20,10 @@ const RECIPE_INCLUDE = {
 
 @Injectable()
 export class RecipesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly ingredientsService: IngredientsService,
+  ) {}
 
   async create(dto: CreateRecipeDto) {
     try {
@@ -158,6 +162,9 @@ export class RecipesService {
             unit: true,
             ingredient: {
               select: {
+                id: true,
+                name: true,
+                kcalPer100g: true,
                 sugarPer100g: true,
                 magnesiumPer100gMg: true,
                 vitaminB12Per100g: true,
@@ -178,15 +185,16 @@ export class RecipesService {
     let totalVitaminB12Ug = 0;
 
     for (const item of recipe.recipeIngredients) {
+      const nutrients = await this.ingredientsService.resolveNutrientsForIngredient(tx, item.ingredient);
       const grams = this.toGrams(item.amount, item.unit);
       if (!Number.isFinite(grams) || grams <= 0) {
         continue;
       }
 
       totalMassG += grams;
-      totalSugarG += grams * ((item.ingredient.sugarPer100g ?? 0) / 100);
-      totalMagnesiumMg += grams * ((item.ingredient.magnesiumPer100gMg ?? 0) / 100);
-      totalVitaminB12Ug += grams * ((item.ingredient.vitaminB12Per100g ?? 0) / 100);
+      totalSugarG += grams * ((nutrients.sugarPer100g ?? 0) / 100);
+      totalMagnesiumMg += grams * ((nutrients.magnesiumPer100gMg ?? 0) / 100);
+      totalVitaminB12Ug += grams * ((nutrients.vitaminB12Per100g ?? 0) / 100);
     }
 
     const sugarPer100g = totalMassG > 0 ? (totalSugarG / totalMassG) * 100 : 0;
