@@ -46,6 +46,8 @@ export class RecipesService {
           });
         }
 
+        await this.recomputePropertyScores(tx, recipe.id);
+
         return tx.recipe.findUniqueOrThrow({
           where: { id: recipe.id },
           include: RECIPE_INCLUDE,
@@ -120,6 +122,8 @@ export class RecipesService {
           }
         }
 
+        await this.recomputePropertyScores(tx, id);
+
         return tx.recipe.findUniqueOrThrow({
           where: { id },
           include: RECIPE_INCLUDE,
@@ -142,6 +146,131 @@ export class RecipesService {
       }
       throw error;
     }
+  }
+
+  private async recomputePropertyScores(tx: Prisma.TransactionClient, recipeId: string) {
+    const recipe = await tx.recipe.findUnique({
+      where: { id: recipeId },
+      select: {
+        recipeIngredients: {
+          select: {
+            amount: true,
+            unit: true,
+            ingredient: {
+              select: {
+                sugarPer100g: true,
+                magnesiumPer100gMg: true,
+                vitaminB12Per100g: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!recipe) {
+      return;
+    }
+
+    let totalMassG = 0;
+    let totalSugarG = 0;
+    let totalMagnesiumMg = 0;
+    let totalVitaminB12Ug = 0;
+
+    for (const item of recipe.recipeIngredients) {
+      const grams = this.toGrams(item.amount, item.unit);
+      if (!Number.isFinite(grams) || grams <= 0) {
+        continue;
+      }
+
+      totalMassG += grams;
+      totalSugarG += grams * ((item.ingredient.sugarPer100g ?? 0) / 100);
+      totalMagnesiumMg += grams * ((item.ingredient.magnesiumPer100gMg ?? 0) / 100);
+      totalVitaminB12Ug += grams * ((item.ingredient.vitaminB12Per100g ?? 0) / 100);
+    }
+
+    const sugarPer100g = totalMassG > 0 ? (totalSugarG / totalMassG) * 100 : 0;
+    const magnesiumPer100g = totalMassG > 0 ? (totalMagnesiumMg / totalMassG) * 100 : 0;
+    const vitaminB12Per100g = totalMassG > 0 ? (totalVitaminB12Ug / totalMassG) * 100 : 0;
+
+    const magnesiumScore = this.normalize(magnesiumPer100g, 20, 80);
+    const b12Score = this.normalize(vitaminB12Per100g, 0.2, 1.0);
+
+    const scoreByKey = new Map<string, number>([
+      ['zuckerarm', this.inverseNormalize(sugarPer100g, 5, 15)],
+      ['magnesiumreich', magnesiumScore],
+      ['vitamin_b12_reich', b12Score],
+      ['mitochondrien_support', Math.min(magnesiumScore, b12Score)],
+    ]);
+
+    const properties = await tx.property.findMany({
+      where: {
+        key: {
+          in: Array.from(scoreByKey.keys()),
+        },
+      },
+      select: {
+        id: true,
+        key: true,
+      },
+    });
+
+    const rows = properties.map((property) => ({
+      recipeId,
+      propertyId: property.id,
+      score: scoreByKey.get(property.key) ?? 0,
+    }));
+
+    await tx.recipePropertyScore.deleteMany({
+      where: { recipeId },
+    });
+
+    if (rows.length) {
+      await tx.recipePropertyScore.createMany({
+        data: rows,
+      });
+    }
+  }
+
+  private normalize(value: number, min: number, max: number): number {
+    if (value <= min) {
+      return 0;
+    }
+    if (value >= max) {
+      return 1;
+    }
+    return (value - min) / (max - min);
+  }
+
+  private inverseNormalize(value: number, min: number, max: number): number {
+    if (value <= min) {
+      return 1;
+    }
+    if (value >= max) {
+      return 0;
+    }
+    return (max - value) / (max - min);
+  }
+
+  private toGrams(amount: number, unit: string): number {
+    const normalizedUnit = unit.trim().toLowerCase();
+    const multipliers: Record<string, number> = {
+      g: 1,
+      gram: 1,
+      grams: 1,
+      kg: 1000,
+      mg: 0.001,
+      oz: 28.3495,
+      lb: 453.592,
+      ml: 1,
+      l: 1000,
+      tsp: 5,
+      tbsp: 15,
+      cup: 240,
+    };
+
+    const multiplier = multipliers[normalizedUnit];
+    return multiplier ? amount * multiplier : NaN;
   }
 
   private throwKnownPrismaError(error: unknown): void {
